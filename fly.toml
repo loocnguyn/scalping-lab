@@ -1,0 +1,23 @@
+# Chay 24/24 tren Fly.io. Trien khai:
+#   fly launch --no-deploy
+#   fly secrets set DATABASE_URL="postgresql://..."
+#   fly deploy
+app = "scalping-lab"
+primary_region = "sin"   # Singapore, cung vung voi Supabase ap-southeast-1
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SYMBOL = "btcusdt"
+  FLUSH_INTERVAL_MS = "2000"
+  LOG_LEVEL = "info"
+
+# QUAN TRONG: khong dung auto_stop. Day la worker giu WebSocket, khong phai web service.
+# May bi ngu = mat du lieu = hong tieu chi Cua 1.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[processes]
+  app = "node dist/index.js"
