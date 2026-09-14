@@ -170,13 +170,44 @@ export const BAR = {
 } as const;
 
 /**
+ * Dung chuoi ket noi Postgres.
+ *
+ * Uu tien DATABASE_URL neu co. Neu khong, dung tu SUPABASE_PROJECT_REF +
+ * SUPABASE_DB_PASSWORD.
+ *
+ * Vi sao co duong thu hai: mat khau Supabase sinh tu dong thuong chua ky tu dac biet
+ * (@ ? # / :) — dan thang vao chuoi URL la hong, va loi bao ra se la "khong phan giai
+ * duoc host" chu khong phai "sai mat khau", rat mat thoi gian de tim. Ghep bang
+ * encodeURIComponent thi khong bao gio dinh chuyen do.
+ */
+function buildDbUrl(): string {
+  const direct = process.env['DATABASE_URL'];
+  if (direct !== undefined && direct !== '') return direct;
+
+  const ref = process.env['SUPABASE_PROJECT_REF'];
+  const pwd = process.env['SUPABASE_DB_PASSWORD'];
+  const region = process.env['SUPABASE_REGION'] ?? 'ap-southeast-1';
+
+  if (ref !== undefined && ref !== '' && pwd !== undefined && pwd !== '') {
+    return 'postgresql://postgres.' + ref + ':' + encodeURIComponent(pwd) +
+           '@aws-0-' + region + '.pooler.supabase.com:5432/postgres';
+  }
+
+  if (DRY_RUN) return 'postgresql://dry-run/none';
+  throw new Error(
+    'Thieu chuoi ket noi DB. Dat DATABASE_URL, hoac dat SUPABASE_PROJECT_REF va ' +
+    'SUPABASE_DB_PASSWORD trong .env. Chay `npm run check-db` de kiem tra.',
+  );
+}
+
+/**
  * Che do chay thu: doc WebSocket va gop bar binh thuong nhung KHONG ghi DB, in bar ra stdout.
  * Dung de kiem chung duong ingest truoc khi co chuoi ket noi Postgres.
  */
 export const DRY_RUN = process.env['DRY_RUN'] === '1';
 
 export const DB = {
-  url: DRY_RUN ? env('DATABASE_URL', 'postgresql://dry-run/none') : env('DATABASE_URL'),
+  url: buildDbUrl(),
   flushIntervalMs: envInt('FLUSH_INTERVAL_MS', 2_000),
   /** So bar toi da gom truoc khi ep ghi, tranh phinh bo nho neu DB cham. */
   maxQueueSize: 5_000,
