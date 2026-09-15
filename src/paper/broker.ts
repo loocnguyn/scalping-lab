@@ -78,9 +78,24 @@ export const DEFAULT_BROKER: BrokerConfig = {
   accountUsdt: 1_000,
 };
 
+/** So lenh da dong con giu lai trong bo nho, de chan doan. Phan con lai nam o DB. */
+const RECENT_CLOSED_CAP = 200;
+
 export class PaperBroker {
   #positions: PaperPosition[] = [];
-  #closed: PaperPosition[] = [];
+  /**
+   * CHI giu mot cua so gan day, khong giu het.
+   *
+   * Moi PaperPosition om ca mot FeatureSnapshot. Giu vo han thi worker chay 24/24 se
+   * phinh dan: S3 toi da 1 signal/60s cho ra ~124 MB sau 90 ngay, tren may Fly 512 MB.
+   * Do la ro ri bo nho chay cham — kieu chi giet worker sau nhieu tuan, dung luc du
+   * lieu bat dau co gia tri.
+   *
+   * Khong mat gi ca: moi ket qua da duoc ghi xuong signal_outcomes, va cong thich nghi
+   * giu thong ke rieng. Mang nay chi de nhin nhanh khi chan doan.
+   */
+  #recentClosed: PaperPosition[] = [];
+  #closedCount = 0;
   /** Gia dong biet cuoi cung, de dong duoc vi the het gio giu khi khong co gia moi. */
   #lastCloseCents: bigint | null = null;
 
@@ -92,8 +107,23 @@ export class PaperBroker {
   get openPositions(): readonly PaperPosition[] {
     return this.#positions.filter((p) => p.status !== 'closed');
   }
-  get closedPositions(): readonly PaperPosition[] {
-    return this.#closed;
+
+  /** Tong so lenh da dong ke tu khi worker chay. */
+  get closedCount(): number {
+    return this.#closedCount;
+  }
+
+  /** Cua so lenh dong gan day (toi da RECENT_CLOSED_CAP), chi de chan doan. */
+  get recentClosed(): readonly PaperPosition[] {
+    return this.#recentClosed;
+  }
+
+  #recordClosed(p: PaperPosition): void {
+    this.#closedCount += 1;
+    this.#recentClosed.push(p);
+    if (this.#recentClosed.length > RECENT_CLOSED_CAP) {
+      this.#recentClosed.splice(0, this.#recentClosed.length - RECENT_CLOSED_CAP);
+    }
   }
 
   /** Nhan signal -> tao lenh limit o trang thai pending (rang buoc cung #3). */
@@ -223,7 +253,7 @@ export class PaperBroker {
       p.rNet = null;
       p.pnlNetUsdtPerBtc = null;
       p.feesUsdtPerBtc = null;
-      this.#closed.push(p);
+      this.#recordClosed(p);
       this.onClose(p);
       return;
     }
@@ -246,7 +276,7 @@ export class PaperBroker {
     p.pnlNetUsdtPerBtc = centsToUsdt(netCents);
     p.feesUsdtPerBtc = centsToUsdt(fees);
 
-    this.#closed.push(p);
+    this.#recordClosed(p);
     this.onClose(p);
   }
 

@@ -203,7 +203,7 @@ async function main(): Promise<void> {
       malformed: router.counters.malformed,
       barsBuffered: features.barCount,
       openPaper: broker.openPositions.length,
-      closedPaper: broker.closedPositions.length,
+      closedPaper: broker.closedCount,
     }));
 
     // Feature nao dang null — de setup khong bao gio kich hoat mot cach im lang.

@@ -1,0 +1,10 @@
+{
+  "//": "Typecheck cho scripts/. Tach rieng vi tsconfig.json co rootDir=src va outDir=dist — gop scripts vao do se pha build. Khong emit, chi kiem tra kieu.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "noUnusedLocals": false
+  },
+  "include": ["scripts/**/*.ts", "src/**/*.ts"]
+}

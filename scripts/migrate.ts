@@ -15,6 +15,10 @@ const client = new pg.Client({
 await client.connect();
 await client.query(`create table if not exists ops_migrations (
   name text primary key, applied_at timestamptz not null default now())`);
+// Bang nay nam o schema public nen PostgREST phoi bay no ra ngoai. Bat RLS khong
+// policy = chan sach anon; worker ket noi truc tiep bang role postgres nen khong bi
+// anh huong. Khong lam buoc nay thi tren DB moi, advisor bao loi muc ERROR ngay.
+await client.query('alter table ops_migrations enable row level security');
 
 const dir = join(process.cwd(), 'db', 'migrations');
 const files = (await readdir(dir)).filter((f) => f.endsWith('.sql')).sort();
