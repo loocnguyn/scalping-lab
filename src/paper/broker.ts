@@ -81,6 +81,8 @@ export const DEFAULT_BROKER: BrokerConfig = {
 export class PaperBroker {
   #positions: PaperPosition[] = [];
   #closed: PaperPosition[] = [];
+  /** Gia dong biet cuoi cung, de dong duoc vi the het gio giu khi khong co gia moi. */
+  #lastCloseCents: bigint | null = null;
 
   constructor(
     private readonly cfg: BrokerConfig = DEFAULT_BROKER,
@@ -118,24 +120,58 @@ export class PaperBroker {
   }
 
   /**
+   * Xu ly het han va het gio giu — KHONG phu thuoc vao gia moi.
+   *
+   * Phai tach khoi onBar vi: khi stream chet, BarAggregator khong phat bar nao ca
+   * (khong co event de gop), nen onBar khong duoc goi lan nao. Neu het han chi duoc
+   * kiem tra ben trong onBar thi lenh pending treo vo thoi han — va treo im lang,
+   * khong bao loi, chi la thong ke nofill khong bao gio duoc ghi.
+   *
+   * Goi tu bo dem 1 giay trong index.ts, doc lap voi dong bar.
+   */
+  tick(now: Date): void {
+    for (const p of this.#positions) {
+      if (p.status === 'closed') continue;
+
+      if (p.status === 'pending') {
+        if (now.getTime() > p.signal.expiresAt.getTime()) {
+          this.#close(p, null, 'nofill', now);
+        }
+        continue;
+      }
+
+      if (
+        p.filledAt !== null &&
+        now.getTime() - p.filledAt.getTime() > this.cfg.maxHoldSec * 1000
+      ) {
+        // Khong co gia moi thi dong theo gia biet cuoi cung. Do la cau tra loi trung
+        // thuc nhat co the dua ra; bia ra mot gia khac se lam ban thong ke R rong.
+        this.#close(p, this.#lastCloseCents, 'timeout', now);
+      }
+    }
+    this.#positions = this.#positions.filter((p) => p.status !== 'closed');
+  }
+
+  /**
    * Nhip gia moi giay. Truyen high/low/close cua bar 1 giay vua chot.
    * Day la noi moi lenh duoc khop, cham TP, cham SL, hoac het han.
    */
   onBar(high: number | null, low: number | null, close: number | null, at: Date): void {
+    // Het han va het gio giu xu ly duoc ma khong can gia — lam truoc, de bar rong
+    // (chi co bookTicker, khong co trade) van khong lam ket lenh pending.
+    this.tick(at);
+
     if (high === null || low === null || close === null) return;
     const h = toCents(high);
     const l = toCents(low);
     const c = toCents(close);
+    this.#lastCloseCents = c;
 
     for (const p of this.#positions) {
       if (p.status === 'closed') continue;
       const isLong = p.signal.side === 'LONG';
 
       if (p.status === 'pending') {
-        if (at.getTime() > p.signal.expiresAt.getTime()) {
-          this.#close(p, null, 'nofill', at);
-          continue;
-        }
         // Bi quan #1: phai di XUYEN QUA gia limit moi coi la khop.
         const filled = isLong ? l < p.entryCents : h > p.entryCents;
         if (filled) {

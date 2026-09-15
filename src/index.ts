@@ -170,6 +170,15 @@ async function main(): Promise<void> {
     if (!DRY_RUN) void uptime.record(ev);
   });
 
+  /**
+   * Nhip 1 giay cho paper broker, DOC LAP voi dong bar.
+   *
+   * Khi stream chet, BarAggregator khong phat bar nao (khong co event de gop) nen
+   * onBar khong duoc goi lan nao. Khong co bo dem nay thi lenh pending treo vo thoi
+   * han va thong ke nofill khong bao gio duoc ghi — mot loi im lang.
+   */
+  const brokerTick = setInterval(() => { broker.tick(new Date()); }, 1_000);
+
   writer.start();
   agg.start();
   health.start();
@@ -261,6 +270,7 @@ async function main(): Promise<void> {
     log.info('worker.shutdown', { signal, ...uptime.summary({}) });
     clearInterval(heartbeat);
     clearInterval(report);
+    clearInterval(brokerTick);
     stream.stop();
     health.stop();
     rest.stop();

@@ -135,5 +135,46 @@ function check(name: string, got: number | null, want: number, tol = 0.02): void
   check('don bay danh nghia ~3.87x', lev, 3.87, 0.05);
 }
 
+// --- 8. Het han phai duoc xu ly NGAY CA KHI khong co gia moi ---
+//     Khi stream chet, aggregator khong phat bar nao (khong co event de gop), nen
+//     onBar khong duoc goi lan nao. Neu het han chi duoc kiem tra ben trong onBar
+//     thi lenh pending treo vo thoi han — va treo mot cach im lang.
+{
+  const b = new PaperBroker(cfg);
+  const s = mkSignal('LONG', PX, PX - 100, PX + 250);
+  const p = b.submit(s);
+  console.log('\n--- Het han khi KHONG co gia moi (stream chet) ---');
+  b.tick(new Date(Date.now() + 120_000)); // 2 phut sau, khong mot bar nao
+  console.log('    outcome =', p.outcome, '(phai la nofill)');
+  if (p.outcome !== 'nofill') { fails += 1; console.log('FAIL lenh pending bi treo'); }
+  else console.log('OK   huy dung han du khong co du lieu gia');
+}
+
+// --- 9. Vi the dang mo phai het gio giu du khong co gia moi ---
+{
+  const b = new PaperBroker({ ...cfg, maxHoldSec: 60 });
+  const s = mkSignal('LONG', PX, PX - 100, PX + 250);
+  const p = b.submit(s);
+  const t0 = new Date();
+  b.onBar(PX + 1, PX - 1, PX, t0); // khop
+  console.log('\n--- Het gio giu khi KHONG co gia moi ---');
+  b.tick(new Date(t0.getTime() + 300_000)); // 5 phut sau, khong bar nao
+  console.log('    outcome =', p.outcome, ' rNet =', p.rNet === null ? null : p.rNet.toFixed(3));
+  if (p.outcome !== 'timeout') { fails += 1; console.log('FAIL vi the bi treo qua han giu'); }
+  else console.log('OK   dong theo gia biet cuoi cung');
+}
+
+// --- 10. tick() khong duoc dong nham lenh van con han ---
+{
+  const b = new PaperBroker(cfg);
+  const s = mkSignal('LONG', PX, PX - 100, PX + 250);
+  const p = b.submit(s);
+  b.tick(new Date(Date.now() + 5_000)); // moi 5 giay, han la 60s
+  console.log('\n--- tick() khi lenh VAN con han ---');
+  console.log('    status =', p.status, '(phai con pending)');
+  if (p.status !== 'pending') { fails += 1; console.log('FAIL dong nham lenh con han'); }
+  else console.log('OK   giu nguyen');
+}
+
 console.log(fails === 0 ? '\n==> TAT CA PASS' : `\n==> ${fails} TEST HONG`);
 process.exit(fails === 0 ? 0 : 1);
