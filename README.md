@@ -48,10 +48,19 @@ Chạy thử không cần DB — đọc dữ liệu Binance thật, in bar ra st
 DRY_RUN=1 npm run dev
 ```
 
-Kiểm chứng bộ tính tiền (đối chiếu với bảng ở mục 1 kế hoạch):
+Chạy toàn bộ test:
 
 ```bash
-DRY_RUN=1 npx tsx scripts/test-broker.ts
+npm test
+```
+
+Bốn bộ: số có thang (tính tiền), cửa sổ cuốn chiếu (bộ lọc chế độ), paper broker
+(P&L sau phí), và đối chiếu ATR giữa TypeScript và SQL.
+
+Đo tốc độ tầng feature:
+
+```bash
+npm run bench
 ```
 
 Báo cáo tiêu chí Cửa 1:
@@ -90,6 +99,10 @@ Nên hệ thống có hai lớp bảo vệ, ở `src/ws/stream-health.ts`:
    nào chết.
 2. **Giám sát tần suất liên tục** — mỗi stream khai báo `minMsgPerMin`; dưới ngưỡng thì cảnh
    báo `stream.silent` và ghi vào `ops_stream_health`.
+3. **Chẩn đoán feature trong heartbeat** (`features.health`) — liệt kê feature nào đang
+   `null`. S3 đòi `bookImb`, S2 đòi `fundingPct` và `oiChg4h`; nếu một trong số đó âm thầm
+   null thì setup đó không bao giờ kích hoạt mà log vẫn xanh. Cùng loại lỗi câm với
+   stream chết nhưng socket vẫn `OPEN`.
 
 `@forceOrder` để `minMsgPerMin: 0` vì thanh lý **thực sự** thưa thớt — không thể phân biệt
 "không có thanh lý" với "stream chết" bằng tần suất. Probe lúc khởi động là thứ phân biệt được.
@@ -121,6 +134,31 @@ Trong `src/paper/broker.ts`. Mỗi cái đều làm kết quả **xấu đi** so
 Dòng cuối là con số người ta hay quên kiểm tra: stop hẹp buộc đòn bẩy danh nghĩa cao để giữ
 cùng mức rủi ro. Khối lượng luôn tính **từ khoảng cách stop**, không bao giờ chọn đòn bẩy
 trước rồi suy ngược.
+
+---
+
+## Bộ lọc chế độ cần thời gian khởi động — đúng như thiết kế
+
+`atr_5m_pct` được so với percentile của **7 ngày** gần nhất. Hai điều quan trọng:
+
+**Lấy mẫu 1 phút/lần, không phải 1 giây/lần.** ATR(5m) gần như không đổi giữa hai giây
+liên tiếp. 604.800 mẫu mỗi giây cho ra cùng một phân phối với 10.080 mẫu mỗi phút nhưng
+tốn gấp 60 lần bộ nhớ. Tệ hơn: percentile tính từ 600 mẫu trong 10 phút — vốn gần như
+giống hệt nhau — là con số ngẫu nhiên đội lốt khoa học, mà nó lại quyết định bộ lọc đứng
+trước mọi rule.
+
+**Cần tối thiểu 6 giờ lịch sử** (`REGIME.atrMinSamples`) trước khi hệ thống phát signal
+nào. Dưới mức đó `regimeLabel = CHUA_DU_DU_LIEU` và mọi setup bị chặn. Im lặng là đúng;
+đoán bừa mới sai.
+
+Để mỗi lần khởi động lại không phải chờ 6 giờ, worker **dựng lại lịch sử ATR từ
+`market.bars_1s`** lúc khởi động (`SignalStore.loadAtrHistory`). Công thức SQL phải khớp
+với công thức TypeScript — `scripts/test-atr-parity.ts` kiểm tra điều đó, hiện lệch 0.10%.
+
+> **Lỗi đã sửa.** Bản đầu lưu 1 mẫu/giây rồi cap ở 200.000 phần tử. 7 ngày cần 604.800
+> mẫu, nên cap chặn trước cutoff và cửa sổ thực tế chỉ còn **2,31 ngày**. Lỗi này chỉ lộ
+> ra sau 2,3 ngày chạy liên tục — tức nằm gọn trong mốc 72 giờ của Tuần 1, đúng lúc bắt
+> đầu tin hệ thống. Nay tách thành `src/features/rolling.ts` có test riêng.
 
 ---
 

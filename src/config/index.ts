@@ -77,6 +77,24 @@ export const REGIME = {
   /** atr_5m_pct duoi percentile nay cua 7 ngay gan nhat => khong phat signal nao. */
   atrPercentileFloor: 40,
   atrLookbackDays: 7,
+
+  /**
+   * Khoang cach giua hai mau ATR duoc giu de tinh percentile.
+   *
+   * ATR(5m) gan nhu khong doi giua hai giay lien tiep. Lay mau moi giay cho ra cung
+   * mot phan phoi nhung ton gap 60 lan bo nho — va 7 ngay x 1 mau/giay = 604.800 mau,
+   * vuot moi cap hop ly, dung la nguyen nhan khien cua so tung bi thu con 2,31 ngay.
+   */
+  atrSampleIntervalMs: 60_000,
+
+  /**
+   * So mau toi thieu truoc khi tin percentile. 360 mau x 1 phut = 6 gio.
+   *
+   * Duoi muc nay he thong KHONG phat signal nao — co chu y. Percentile tinh tu 10 phut
+   * ATR gan nhu y het nhau la con so ngau nhien doi lot khoa hoc, va no quyet dinh
+   * bo loc dung truoc moi rule. Im lang 6 gio dau con hon phat bua.
+   */
+  atrMinSamples: 360,
   /** spread > boi so nay cua trung vi 1h => khong phat signal. */
   spreadMedianMultiplier: 2,
 } as const;

@@ -11,6 +11,7 @@
 
 import { PRICE_SCALE, QTY_SCALE, REGIME } from '../config/index.js';
 import type { Bar1s } from '../bar/aggregator.js';
+import { RollingPercentile } from './rolling.js';
 
 const SEC = 1;
 const MIN = 60 * SEC;
@@ -73,8 +74,16 @@ export class FeatureEngine {
   /** Vong dem bar 1 giay, giu ~4 gio. */
   #buf: BarLite[] = [];
   #maxBars = 4 * 3600 + 600;
-  /** Lich su atr5mPct de tinh percentile (bo loc che do). */
-  #atrHistory: { ts: number; v: number }[] = [];
+  /**
+   * Lich su atr5mPct de tinh percentile (bo loc che do).
+   * Xem src/features/rolling.ts — cua so phai dung bang REGIME.atrLookbackDays,
+   * ban truoc bi cap chan lam cua so thu con 2,31 ngay.
+   */
+  #atrHistory = new RollingPercentile({
+    windowMs: REGIME.atrLookbackDays * 24 * 3600_000,
+    sampleIntervalMs: REGIME.atrSampleIntervalMs,
+    minSamples: REGIME.atrMinSamples,
+  });
   #bookImb: number | null = null;
 
   /** Cap nhat book_imb tu @depth20@100ms — goi tu router. */
@@ -105,6 +114,51 @@ export class FeatureEngine {
 
   get barCount(): number {
     return this.#buf.length;
+  }
+
+  /**
+   * Feature nao dang co gia tri, feature nao dang null.
+   *
+   * Vi sao can: S3 doi `bookImb !== null`, S2 doi `fundingPct` va `oiChg4h`. Neu mot
+   * trong so do am tham null — parse sai payload depth20, REST loi, chua du lich su —
+   * thi setup do KHONG BAO GIO kich hoat va log van xanh. Dung loai loi im lang nhu
+   * stream chet ma van bao "OPEN". Phai nhin thay duoc thi moi sua duoc.
+   */
+  featureHealth(snap: FeatureSnapshot | null): Record<string, boolean> {
+    if (snap === null) return { chuaCoSnapshot: false };
+    return {
+      mid: snap.mid !== null,
+      ofi10s: snap.ofi10s !== null,
+      cvd60s: snap.cvd60s !== null,
+      spreadBps: snap.spreadBps !== null,
+      bookImb: snap.bookImb !== null,
+      atr5mPct: snap.atr5mPct !== null,
+      atrPercentile: snap.atrPercentile !== null,
+      vwapDev: snap.vwapDev !== null,
+      range30m: snap.range30mHigh !== null,
+      fundingPct: snap.fundingPct !== null,
+      oiChg4h: snap.oiChg4h !== null,
+    };
+  }
+
+  /** So mau ATR dang co va khoang thoi gian chung phu — de log va chan doan. */
+  get atrHistoryStats(): { samples: number; spanHours: number; ready: boolean } {
+    return {
+      samples: this.#atrHistory.size,
+      spanHours: Math.round((this.#atrHistory.spanMs / 3_600_000) * 10) / 10,
+      ready: this.#atrHistory.ready,
+    };
+  }
+
+  /**
+   * Nap san lich su ATR tu du lieu da luu. Khong co ham nay thi moi lan worker khoi
+   * dong lai (deploy, crash, Fly doi may) bo loc che do ve lai "CHUA_DU_DU_LIEU" va
+   * he thong cam 6 gio — trong mot lan chay 72 gio thi do la rat nhieu thoi gian chet.
+   */
+  hydrateAtrHistory(samples: readonly { ts: number; atrPct: number }[]): number {
+    let kept = 0;
+    for (const s of samples) if (this.#atrHistory.push(s.ts, s.atrPct)) kept += 1;
+    return kept;
   }
 
   #window(sec: number): BarLite[] {
@@ -227,21 +281,11 @@ export class FeatureEngine {
     if (last === undefined) return null;
 
     const atr5mPct = this.#atr5mPct();
-    if (atr5mPct !== null) {
-      this.#atrHistory.push({ ts: last.ts, v: atr5mPct });
-      const cutoff = last.ts - REGIME.atrLookbackDays * 24 * 3600_000;
-      if (this.#atrHistory.length > 200_000) this.#atrHistory.splice(0, 50_000);
-      this.#atrHistory = this.#atrHistory.filter((x) => x.ts >= cutoff);
-    }
+    if (atr5mPct !== null) this.#atrHistory.push(last.ts, atr5mPct);
 
-    // Can du mau moi noi ve percentile. Duoi muc nay thi tra ve null thay vi bia ra
-    // mot con so nghe co ve khoa hoc — va vi regimeOk yeu cau BIEN_DONG_CAO, he thong
-    // se tu dong khong phat signal nao cho toi khi tich du lich su. Dung nhu y do.
-    let atrPercentile: number | null = null;
-    if (atr5mPct !== null && this.#atrHistory.length >= 600) {
-      const below = this.#atrHistory.filter((x) => x.v < atr5mPct).length;
-      atrPercentile = (below / this.#atrHistory.length) * 100;
-    }
+    // Chua du mau => null, va vi regimeOk yeu cau BIEN_DONG_CAO nen he thong tu dong
+    // khong phat signal nao cho toi khi tich du lich su. Dung nhu y do.
+    const atrPercentile = atr5mPct === null ? null : this.#atrHistory.percentileOf(atr5mPct);
 
     const spreads = this.#window(60 * MIN)
       .map((x) => x.spread)

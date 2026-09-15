@@ -111,6 +111,59 @@ export class SignalStore {
     }
   }
 
+  /**
+   * Dung lai lich su ATR(5m) tu bar da luu.
+   *
+   * Lich su nay chi nam trong RAM, nen moi lan worker khoi dong lai — deploy, crash,
+   * Fly doi may — bo loc che do ve lai "CHUA_DU_DU_LIEU" va he thong cam 6 gio.
+   * Trong mot lan chay 72 gio thi do la rat nhieu thoi gian chet, va te hon la
+   * thoi gian chet KHONG hien ra nhu mot loi: log van xanh, chi la khong co signal nao.
+   *
+   * Cong thuc phai khop voi FeatureEngine.#atr5mPct: gop bar 1 giay thanh nen 5 phut,
+   * true range moi nen, roi trung binh 14 nen gan nhat, quy ve % gia.
+   */
+  async loadAtrHistory(lookbackDays: number): Promise<{ ts: number; atrPct: number }[]> {
+    try {
+      const r = await pool.query<{ ts: string; atr_pct: string }>(
+        `with c as (
+           select to_timestamp(floor(extract(epoch from bar_ts) / 300) * 300) as t5,
+                  max(high) as h, min(low) as l,
+                  (array_agg(close order by bar_ts desc))[1] as c
+           from market.bars_1s
+           where bar_ts > now() - ($1 || ' days')::interval
+             and high is not null and low is not null and close is not null
+           group by 1
+         ),
+         tr as (
+           select t5, c,
+                  greatest(
+                    h - l,
+                    abs(h - lag(c) over (order by t5)),
+                    abs(l - lag(c) over (order by t5))
+                  ) as tr
+           from c
+         ),
+         a as (
+           select t5, c,
+                  avg(tr) over (order by t5 rows between 13 preceding and current row) as atr14
+           from tr
+         )
+         select (extract(epoch from t5) * 1000)::bigint::text as ts,
+                (atr14 / c * 100)::text as atr_pct
+         from a
+         where atr14 is not null and c > 0
+         order by t5`,
+        [lookbackDays],
+      );
+      return r.rows
+        .map((x) => ({ ts: Number(x.ts), atrPct: Number(x.atr_pct) }))
+        .filter((x) => Number.isFinite(x.ts) && Number.isFinite(x.atrPct));
+    } catch (e) {
+      log.warn('store.atr_history_failed', errFields(e));
+      return [];
+    }
+  }
+
   /** Nap lai trang thai cong loc khi worker khoi dong — tri nho phai song qua restart. */
   async loadGateState(): Promise<
     { setup: string; regime: string; hour_bucket: number; enabled: boolean }[]

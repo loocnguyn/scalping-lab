@@ -17,7 +17,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { BAR, DRY_RUN, GATE1, STREAMS, SYMBOL, WS } from './config/index.js';
+import { BAR, DRY_RUN, GATE1, REGIME, STREAMS, SYMBOL, WS } from './config/index.js';
 import { log, errFields } from './lib/logger.js';
 import { pingDb, closeDb } from './db/pool.js';
 import { BatchWriter } from './db/writer.js';
@@ -78,7 +78,24 @@ async function main(): Promise<void> {
   const rest = new RestPoller();
   const gate = new AdaptiveGate();
 
-  if (!DRY_RUN) gate.hydrate(await store.loadGateState());
+  if (!DRY_RUN) {
+    gate.hydrate(await store.loadGateState());
+
+    // Dung lai lich su ATR tu bar da luu, neu khong moi lan restart la cam 6 gio.
+    const atrSamples = await store.loadAtrHistory(REGIME.atrLookbackDays);
+    const kept = features.hydrateAtrHistory(atrSamples);
+    const st = features.atrHistoryStats;
+    log.info('features.atr_hydrated', {
+      doc: atrSamples.length,
+      giuLai: kept,
+      phu: st.spanHours + ' gio',
+      sanSang: st.ready,
+      canToiThieu: REGIME.atrMinSamples,
+      note: st.ready
+        ? 'bo loc che do hoat dong ngay'
+        : 'chua du lich su — he thong se im lang cho toi khi du',
+    });
+  }
 
   const broker = new PaperBroker(DEFAULT_BROKER, (p) => {
     // Vong nguoc: ket qua lenh quay lai dieu chinh cong loc.
@@ -100,6 +117,9 @@ async function main(): Promise<void> {
 
   const signals = new SignalEngine({ isSetupEnabled: gate.isEnabled });
 
+  // Snapshot gan nhat, de heartbeat bao duoc feature nao dang null.
+  let lastSnapshot: ReturnType<FeatureEngine['snapshot']> = null;
+
   // --- Duong di cua mot bar ---
   const onBar = (bar: Bar1s): void => {
     writer.enqueueBar(bar);
@@ -119,6 +139,7 @@ async function main(): Promise<void> {
       oiChg4h: rest.oiChange4h(),
       minutesToFunding: rest.minutesToFunding(),
     };
+    lastSnapshot = enriched;
 
     for (const sig of signals.evaluate(enriched)) {
       log.info('signal.fired', {
@@ -175,6 +196,16 @@ async function main(): Promise<void> {
       openPaper: broker.openPositions.length,
       closedPaper: broker.closedPositions.length,
     }));
+
+    // Feature nao dang null — de setup khong bao gio kich hoat mot cach im lang.
+    const fh = features.featureHealth(lastSnapshot);
+    const thieu = Object.entries(fh).filter(([, ok]) => !ok).map(([k]) => k);
+    log.info('features.health', {
+      ...features.atrHistoryStats,
+      che_do: lastSnapshot?.regimeLabel ?? 'chua co snapshot',
+      dayDu: thieu.length === 0,
+      dangNull: thieu,
+    });
     if (!DRY_RUN) {
       void uptime.persistStats(stats);
       void store.saveStreamHealth(workerId, health.statuses());

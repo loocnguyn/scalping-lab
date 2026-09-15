@@ -15,7 +15,8 @@
     "migrate": "tsx scripts/migrate.ts",
     "uptime": "tsx scripts/uptime-report.ts",
     "check-db": "tsx scripts/check-db.ts",
-    "test": "tsx scripts/test-broker.ts"
+    "test": "tsx scripts/test-all.ts",
+    "bench": "tsx scripts/bench-features.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
