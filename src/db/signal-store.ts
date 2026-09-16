@@ -19,12 +19,13 @@ export class SignalStore {
     try {
       await pool.query(
         `insert into signals (
-           id, ts, available_at, setup, side, entry_px, stop_px, target_px, expires_at,
-           stop_points, target_points, r_multiple, regime, gated, gate_reason, features
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           id, ts, available_at, symbol, setup, side, entry_px, stop_px, target_px,
+           expires_at, stop_points, target_points, r_multiple, regime, gated,
+           gate_reason, features
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          on conflict (id) do nothing`,
         [
-          s.id, s.ts, s.features.availableAt, s.setup, s.side,
+          s.id, s.ts, s.features.availableAt, s.symbol, s.setup, s.side,
           s.entryPx.toFixed(2), s.stopPx.toFixed(2), s.targetPx.toFixed(2), s.expiresAt,
           s.stopPoints.toFixed(2), s.targetPoints.toFixed(2), s.rMultiple.toFixed(3),
           s.regime, s.gated, s.gateReason,

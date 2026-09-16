@@ -25,7 +25,7 @@ export interface LiquidationRow {
 }
 
 const BAR_COLUMNS = [
-  'bar_ts', 'available_at', 'open', 'high', 'low', 'close', 'vwap',
+  'symbol', 'bar_ts', 'available_at', 'open', 'high', 'low', 'close', 'vwap',
   'volume', 'quote_volume', 'trades', 'taker_buy_vol', 'taker_sell_vol',
   'bid_px', 'bid_qty', 'ask_px', 'ask_qty', 'spread_bps_avg', 'book_updates',
   'liq_long_quote', 'liq_short_quote', 'liq_count',
@@ -121,7 +121,7 @@ export class BatchWriter implements Sink {
     const values: unknown[] = [];
     for (const b of batch) {
       values.push(
-        b.barTs, b.availableAt,
+        SYMBOL.toUpperCase(), b.barTs, b.availableAt,
         px(b.open), px(b.high), px(b.low), px(b.close), px(b.vwap),
         qty(b.volume), formatFixed(b.quoteVolume, PRICE_SCALE), b.trades,
         qty(b.takerBuyVol), qty(b.takerSellVol),
@@ -137,7 +137,7 @@ export class BatchWriter implements Sink {
     await pool.query(
       `insert into market.bars_1s (${BAR_COLUMNS.join(', ')})
        values ${placeholders(batch.length, BAR_COLUMNS.length)}
-       on conflict (bar_ts) do nothing`,
+       on conflict (symbol, bar_ts) do nothing`,
       values,
     );
     this.#barsWritten += batch.length;

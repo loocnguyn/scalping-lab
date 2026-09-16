@@ -21,7 +21,7 @@ const feat: FeatureSnapshot = {
 
 function mkSignal(side: 'LONG' | 'SHORT', entry: number, stop: number, target: number): Signal {
   return {
-    id: 'test-' + side + '-' + target, ts: new Date(), setup: 'S3', side,
+    id: 'test-' + side + '-' + target, ts: new Date(), symbol: 'BTCUSDT', setup: 'S3', side,
     entryPx: entry, stopPx: stop, targetPx: target,
     expiresAt: new Date(Date.now() + 60_000), regime: 'BIEN_DONG_CAO',
     gated: false, gateReason: null, features: feat,

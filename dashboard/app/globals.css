@@ -136,3 +136,7 @@ td.num { font-family: var(--mono); text-align: right; }
 .dot.live { background: var(--up); animation: pulse 2s infinite; }
 .dot.dead { background: var(--down); }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+.switcher{display:flex;gap:6px;margin-bottom:12px}
+.switcher button{background:var(--panel-2);border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .12s}
+.switcher button:hover{color:var(--text);border-color:#31384a}
+.switcher button.on{background:var(--accent);border-color:var(--accent);color:#fff}

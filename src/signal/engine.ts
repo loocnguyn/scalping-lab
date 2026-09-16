@@ -2,7 +2,7 @@
  * Signal engine — ba setup o muc 5 ke hoach.
  *
  * Rang buoc cung duoc cuong che NGAY TAI DAY, khong phai bang y thuc nguoi viet:
- *   #2  moi signal phai co target >= TARGET.minTargetPoints (250 diem)
+ *   #2  moi signal phai co target >= TARGET.minTargetPct (0,32% gia)
  *   #3  vao lenh mac dinh la limit, co han huy neu khong khop
  *   #4  moi signal bat buoc co entry, stop, target, han hieu luc
  *   #7  shadow mode — engine chi PHAT signal, khong bao gio dat lenh that
@@ -12,7 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { REGIME, TARGET } from '../config/index.js';
+import { REGIME, SYMBOL, TARGET } from '../config/index.js';
 import type { FeatureSnapshot } from '../features/engine.js';
 
 export type SetupId = 'S1' | 'S2' | 'S3';
@@ -21,6 +21,8 @@ export type Side = 'LONG' | 'SHORT';
 export interface Signal {
   readonly id: string;
   readonly ts: Date;
+  /** Ma hop dong. Mot worker phuc vu mot symbol; truong nay de thong bao va DB phan biet. */
+  readonly symbol: string;
   readonly setup: SetupId;
   readonly side: Side;
   readonly entryPx: number;
@@ -248,12 +250,15 @@ export class SignalEngine {
     const stopPoints = Math.abs(entry - stop);
     const targetPoints = Math.abs(target - entry);
 
-    // Rang buoc cung #2: khong bao gio de xuat TP duoi 250 diem.
-    // TP 100 diem can win rate 88.7% de hoa von — de xuat nhu vay la sai, khong phai
-    // "tin hieu yeu". Chan thang tai day.
-    if (targetPoints < TARGET.minTargetPoints) {
+    // Rang buoc cung #2, tinh theo PHAN TRAM gia chu khong phai so diem tuyet doi.
+    // 250 diem tren BTC gia 78k = 0,32%. Cung 250 diem tren vang gia 4.345 se la
+    // 5,75% — vo ly. Con so that la phan tram; so diem chi la cach doc no o mot muc
+    // gia cu the.
+    const minTargetPoints = (entry * TARGET.minTargetPct) / 100;
+    if (targetPoints < minTargetPoints) {
       this.#note(setup, false,
-        'target ' + targetPoints.toFixed(0) + ' diem < toi thieu ' + TARGET.minTargetPoints);
+        'target ' + targetPoints.toFixed(1) + ' diem < toi thieu ' +
+        minTargetPoints.toFixed(1) + ' (' + TARGET.minTargetPct + '% gia)');
       return null;
     }
     if (stopPoints <= 0) { this.#note(setup, false, 'stop khong hop le'); return null; }
@@ -271,6 +276,7 @@ export class SignalEngine {
     return {
       id: randomUUID(),
       ts: new Date(),
+      symbol: SYMBOL.toUpperCase(),
       setup,
       side,
       entryPx: entry,

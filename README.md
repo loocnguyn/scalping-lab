@@ -63,11 +63,53 @@ Bốn bộ: số có thang (tính tiền), cửa sổ cuốn chiếu (bộ lọc
 npm run bench
 ```
 
+Kiểm tra Telegram trước khi tin:
+
+```bash
+npm run test-telegram
+```
+
 Báo cáo tiêu chí Cửa 1:
 
 ```bash
 npm run uptime
 ```
+
+---
+
+## Thông báo Telegram
+
+Signal scalping chỉ sống **30–180 giây**. Ngồi canh dashboard 24/24 là không thực tế,
+nên thông báo đẩy thẳng tới người mới là thứ biến hệ thống thành dùng được.
+
+Chỉ gửi signal **không bị cổng lọc chặn**. Signal bị chặn vẫn ghi DB để học, nhưng gửi
+hết ra thì người đọc sẽ quen cách bỏ qua — và đó là cách nhanh nhất để biến thông báo
+thành rác.
+
+Email đã thử rồi bỏ: 5–30 giây độ trễ cộng thói quen không mở mail ngay là quá chậm cho
+khung thời gian này.
+
+Cấu hình trong `.env`: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`. Lưu ý **bắt buộc phải
+nhắn tin cho bot trước** — Telegram không cho bot nhắn trước cho người chưa từng nhắn nó.
+
+---
+
+## Hai hợp đồng: BTC và vàng
+
+`XAUUSDT` trên Binance Futures là vàng thật, và các stream hoạt động **y hệt BTC**:
+`@trade`, `@bookTicker`, `@depth20` sống; `@aggTrade`, `@forceOrder` chết.
+
+> **Ràng buộc "250 điểm" đã được sửa thành phần trăm.** Kế hoạch viết "250 điểm BTC
+> (~0,32% ở giá 77k)". Con số thật là **0,32%**; 250 điểm chỉ là cách đọc nó ở một mức
+> giá cụ thể. Áp thẳng 250 điểm sang vàng (giá ~4.345) thành **5,75%** — vô lý, và sẽ
+> không bao giờ có signal nào lọt qua.
+>
+> Nay dùng `TARGET.minTargetPct`, và DB cưỡng chế bằng
+> `check (target_points >= entry_px * 0.0032)`. Đã kiểm chứng 4 trường hợp: BTC TP 100
+> điểm (0,13%) bị chặn, vàng TP 14 điểm (0,322%) qua, vàng TP 5 điểm (0,115%) bị chặn.
+
+Một worker phục vụ một hợp đồng. Chạy vàng bằng cách đặt `SYMBOL=xauusdt` — cùng image,
+khác biến môi trường. Bảng `bars_1s` và `signals` đều có cột `symbol`.
 
 ---
 

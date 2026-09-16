@@ -33,6 +33,7 @@ import { FeatureEngine } from './features/engine.js';
 import { SignalEngine } from './signal/engine.js';
 import { PaperBroker, DEFAULT_BROKER } from './paper/broker.js';
 import { AdaptiveGate } from './learn/gate.js';
+import { TelegramNotifier } from './notify/telegram.js';
 import { PRICE_SCALE } from './config/index.js';
 
 const HEARTBEAT_MS = 60_000;
@@ -117,6 +118,14 @@ async function main(): Promise<void> {
 
   const signals = new SignalEngine({ isSetupEnabled: gate.isEnabled });
 
+  // Thong bao Telegram. Xac minh token NGAY luc khoi dong de biet sai cau hinh ngay,
+  // thay vi phat hien luc co signal dau tien — ma signal dau tien co the vai gio sau.
+  const notifier = new TelegramNotifier();
+  await notifier.start();
+
+  // Chi gui canh bao khi CHUYEN trang thai, khong lap lai moi phut.
+  let criticalWasDown = false;
+
   // Snapshot gan nhat, de heartbeat bao duoc feature nao dang null.
   let lastSnapshot: ReturnType<FeatureEngine['snapshot']> = null;
 
@@ -158,6 +167,20 @@ async function main(): Promise<void> {
         donBayDanhNghia: broker.notionalLeverage(sig).toFixed(2) + 'x',
       });
       if (!DRY_RUN) void store.saveSignal(sig);
+
+      // Chi bao Telegram cho signal VAO DUOC. Signal bi cong loc chan van duoc ghi
+      // DB de hoc, nhung bao het ra thi nguoi doc se quen cach phan biet — va do la
+      // cach nhanh nhat de bien thong bao thanh rac roi bi bo qua.
+      notifier.notifySignal(sig, {
+        suggestedQty: (x) => broker.suggestedQtyBtc(x),
+        notionalLeverage: (x) => broker.notionalLeverage(x),
+        recentStats: (setup, regime) => {
+          const b = gate.stats().find((y) => y.setup === setup && y.regime === regime);
+          return b === undefined || b.n === 0
+            ? null
+            : { n: b.n, winRate: b.winRate, expRNet: b.expRNet };
+        },
+      });
       // Muc 0: theo doi CA signal bi chan. Khong co du lieu ve signal bi chan thi
       // khong bao gio biet cong loc chan dung hay chan nham.
       broker.submit(sig);
@@ -202,6 +225,9 @@ async function main(): Promise<void> {
       forceOrders: router.counters.forceOrders,
       malformed: router.counters.malformed,
       barsBuffered: features.barCount,
+      tgSent: notifier.stats.sent,
+      tgFailed: notifier.stats.failed,
+      tgEnabled: notifier.stats.enabled,
       openPaper: broker.openPositions.length,
       closedPaper: broker.closedCount,
     }));
@@ -227,6 +253,22 @@ async function main(): Promise<void> {
         streams: down.map((d) => d.name),
         note: 'Ket noi van mo nhung stream bat buoc khong co du lieu — dang ghi bar rong.',
       });
+      // Chi bao khi CHUYEN sang trang thai hong, khong bao lai moi phut.
+      if (!criticalWasDown) {
+        criticalWasDown = true;
+        notifier.notifyOps(
+          'Stream bat buoc im lang',
+          [
+            'Cac stream sau khong co du lieu: ' + down.map((d) => d.name).join(', '),
+            '',
+            'Ket noi WebSocket van mo nen worker khong bao loi, nhung dang ghi bar rong.',
+            'Se khong co signal nao cho toi khi stream hoat dong lai.',
+          ].join('\n'),
+        );
+      }
+    } else if (criticalWasDown) {
+      criticalWasDown = false;
+      notifier.notifyOps('Stream da hoat dong lai', 'Cac stream bat buoc da co du lieu tro lai.');
     }
     if (!uptime.passesGate1) {
       log.warn('gate1.at_risk', {

@@ -61,8 +61,17 @@ export const FEES = {
 // ---------------------------------------------------------------------------
 
 export const TARGET = {
-  /** Khong bao gio de xuat TP duoi muc nay. TP 100 diem can WR 88.7% de hoa von. */
-  minTargetPoints: 250,
+  /**
+   * Muc tieu toi thieu, tinh theo PHAN TRAM gia — khong phai so diem tuyet doi.
+   *
+   * Ke hoach viet "250 diem BTC (~0.32% o gia 77k)". Con so that la 0,32%; 250 diem
+   * chi la cach doc no o mot muc gia cu the. Ap thang 250 diem sang vang (gia ~4.345)
+   * se thanh 5,75% — vo ly, va se khong bao gio co signal nao.
+   *
+   * Ly do goc van giu nguyen: TP qua nho thi phi an het loi the. TP 100 diem tren BTC
+   * can win rate 88,7% de hoa von.
+   */
+  minTargetPct: 0.32,
   /** Vao lenh mac dinh la limit (maker), khong phai market. */
   defaultEntryType: 'limit' as const,
   /** Huy lenh pending neu khong khop trong khoang nay. */
@@ -225,7 +234,8 @@ function buildDbUrl(): string {
 export const DRY_RUN = process.env['DRY_RUN'] === '1';
 
 export const DB = {
-  url: buildDbUrl(),
+  /** Getter de chi tinh khi that su dung. Script chi test thong bao khong can DB. */
+  get url(): string { return buildDbUrl(); },
   flushIntervalMs: envInt('FLUSH_INTERVAL_MS', 2_000),
   /** So bar toi da gom truoc khi ep ghi, tranh phinh bo nho neu DB cham. */
   maxQueueSize: 5_000,
@@ -242,6 +252,53 @@ export const GATE1 = {
   maxDowntimeRatio: 0.005,
   /** Tieu chi hoan thanh Tuan 1: chay 72h lien tuc khong mat du lieu. */
   requiredContinuousHours: 72,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Thong bao email — thu bien he thong thanh dung duoc that
+// ---------------------------------------------------------------------------
+
+/**
+ * SMTP. Voi Gmail: host smtp.gmail.com, port 587, user la dia chi Gmail, va pass
+ * phai la APP PASSWORD (16 ky tu) — KHONG phai mat khau tai khoan. Google chan
+ * dang nhap bang mat khau thuong tu 2022.
+ *
+ * Dung duoc voi moi nha cung cap SMTP khac (Resend, Mailgun, SendGrid) chi bang
+ * cach doi 4 bien nay.
+ */
+export const MAIL = {
+  host: process.env['SMTP_HOST'] ?? 'smtp.gmail.com',
+  port: envInt('SMTP_PORT', 587),
+  user: process.env['SMTP_USER'] ?? '',
+  pass: process.env['SMTP_PASS'] ?? '',
+  to: process.env['ALERT_EMAIL_TO'] ?? process.env['SMTP_USER'] ?? '',
+  from: process.env['ALERT_EMAIL_FROM'] ?? `scalping-lab <${process.env['SMTP_USER'] ?? ''}>`,
+  /**
+   * Tran so email moi gio. Chan spam khi co su co lap lai — mot loi lap moi giay
+   * se lam day hop thu va co the khien Google khoa tai khoan.
+   */
+  maxPerHour: envInt('MAIL_MAX_PER_HOUR', 20),
+  get enabled(): boolean {
+    return this.user !== '' && this.pass !== '' && this.to !== '';
+  },
+} as const;
+
+/**
+ * Telegram. Lay token tu @BotFather, va chat id bang cach nhan tin cho bot roi mo
+ * https://api.telegram.org/bot<TOKEN>/getUpdates
+ *
+ * Vi sao Telegram thay vi email: signal song 30-180 giay. Email mat 5-30 giay de toi
+ * va nguoi ta khong mo mail ngay; Telegram day thang vao man hinh khoa.
+ */
+export const TELEGRAM = {
+  token: process.env['TELEGRAM_BOT_TOKEN'] ?? '',
+  chatId: process.env['TELEGRAM_CHAT_ID'] ?? '',
+  timeoutMs: envInt('TELEGRAM_TIMEOUT_MS', 10_000),
+  /** Telegram khoa bot neu vuot gioi han; mot su co lap moi giay du de bi khoa. */
+  maxPerHour: envInt('TELEGRAM_MAX_PER_HOUR', 30),
+  get enabled(): boolean {
+    return this.token !== '' && this.chatId !== '';
+  },
 } as const;
 
 export const LOG_LEVEL = env('LOG_LEVEL', 'info') as 'debug' | 'info' | 'warn' | 'error';

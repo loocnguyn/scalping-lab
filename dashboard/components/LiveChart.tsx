@@ -7,15 +7,26 @@ import { createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from 
  * Chart live noi THANG toi Binance tu trinh duyet.
  *
  * Vi sao khong doc bar tu DB: trang nay phai dung duoc ngay ca khi worker chua chay.
- * Doc DB thi khi bang rong se ra mot man hinh trong khong giai thich duoc gi. Noi
- * thang Binance thi luon co gia va spread that de nhin.
+ * Doc DB thi khi bang rong se ra man hinh trong khong giai thich duoc gi.
  *
  * Dung dung nhung stream ma worker dung — @trade va @bookTicker. Hai cai nay da duoc
- * kiem chung la con phat; @aggTrade va @kline_* tren endpoint futures dang im lang
- * (xem README muc "Trang thai stream").
+ * kiem chung la con phat tren CA HAI hop dong; @aggTrade va @kline_* tren endpoint
+ * futures dang im lang (xem README muc "Trang thai stream").
  */
 
-const WS_URL = 'wss://fstream.binance.com/stream?streams=btcusdt@trade/btcusdt@bookTicker';
+interface Market {
+  readonly symbol: string;
+  readonly label: string;
+  readonly stream: string;
+  /** So chu so thap phan khi hien gia. BTC ~78.000 can 1; vang ~4.345 can 2. */
+  readonly dp: number;
+  readonly unit: string;
+}
+
+const MARKETS: readonly Market[] = [
+  { symbol: 'BTCUSDT', label: '₿ Bitcoin', stream: 'btcusdt', dp: 1, unit: 'BTC' },
+  { symbol: 'XAUUSDT', label: '🥇 Vàng', stream: 'xauusdt', dp: 2, unit: 'XAU' },
+];
 
 interface Candle {
   time: UTCTimestamp;
@@ -23,10 +34,11 @@ interface Candle {
 }
 
 export default function LiveChart() {
+  const [market, setMarket] = useState<Market>(MARKETS[0] as Market);
+
   const boxRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const currentRef = useRef<Candle | null>(null);
+  const curRef = useRef<Candle | null>(null);
   const cvdRef = useRef(0);
 
   const [price, setPrice] = useState<number | null>(null);
@@ -39,42 +51,38 @@ export default function LiveChart() {
   // --- Dung chart mot lan ---
   useEffect(() => {
     if (boxRef.current === null) return;
-
-    const chart = createChart(boxRef.current, {
+    const chart: IChartApi = createChart(boxRef.current, {
       height: 380,
       layout: { background: { color: 'transparent' }, textColor: '#787b86', fontSize: 11 },
-      grid: {
-        vertLines: { color: 'rgba(36,42,56,.6)' },
-        horzLines: { color: 'rgba(36,42,56,.6)' },
-      },
+      grid: { vertLines: { color: 'rgba(36,42,56,.6)' }, horzLines: { color: 'rgba(36,42,56,.6)' } },
       rightPriceScale: { borderColor: '#242a38' },
       timeScale: { borderColor: '#242a38', timeVisible: true, secondsVisible: true },
-      crosshair: { mode: 0 },
     });
-    const series = chart.addCandlestickSeries({
-      upColor: '#26a69a', downColor: '#ef5350',
-      borderUpColor: '#26a69a', borderDownColor: '#ef5350',
-      wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+    seriesRef.current = chart.addCandlestickSeries({
+      upColor: '#26a69a', downColor: '#ef5350', borderUpColor: '#26a69a',
+      borderDownColor: '#ef5350', wickUpColor: '#26a69a', wickDownColor: '#ef5350',
     });
-    chartRef.current = chart;
-    seriesRef.current = series;
-
     const onResize = (): void => {
       if (boxRef.current !== null) chart.applyOptions({ width: boxRef.current.clientWidth });
     };
     onResize();
     window.addEventListener('resize', onResize);
-
     return () => {
       window.removeEventListener('resize', onResize);
       chart.remove();
-      chartRef.current = null;
       seriesRef.current = null;
     };
   }, []);
 
-  // --- Noi WebSocket, tu ket noi lai khi rot ---
+  // --- Noi WebSocket. Chay lai khi doi hop dong. ---
   useEffect(() => {
+    // Doi hop dong thi moi so lieu deu phai reset — giu lai se tron du lieu hai thi truong.
+    seriesRef.current?.setData([]);
+    curRef.current = null;
+    cvdRef.current = 0;
+    setPrice(null); setPrev(null); setSpread(null); setCvd(0); setTrades(0); setLive(false);
+
+    const url = `wss://fstream.binance.com/stream?streams=${market.stream}@trade/${market.stream}@bookTicker`;
     let ws: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
@@ -82,41 +90,37 @@ export default function LiveChart() {
 
     const connect = (): void => {
       if (closed) return;
-      ws = new WebSocket(WS_URL);
-
+      ws = new WebSocket(url);
       ws.onopen = () => { attempt = 0; setLive(true); };
-
       ws.onmessage = (ev: MessageEvent<string>) => {
         let msg: { stream?: string; data?: unknown };
         try { msg = JSON.parse(ev.data) as typeof msg; } catch { return; }
         const d = msg.data;
         if (typeof d !== 'object' || d === null) return;
         const o = d as Record<string, unknown>;
+        const s = msg.stream ?? '';
 
-        if (msg.stream?.endsWith('@trade') === true) {
+        if (s.endsWith('@trade')) {
           const p = Number(o['p']);
           const q = Number(o['q']);
           const t = Number(o['T']);
           if (!Number.isFinite(p) || !Number.isFinite(t)) return;
-
-          // m = true nghia la ben mua la maker => nguoi BAN chu dong.
+          // m = true: ben mua la maker => nguoi BAN chu dong.
           cvdRef.current += o['m'] === true ? -q : q;
-
           setPrice((old) => { setPrev(old); return p; });
           setTrades((n) => n + 1);
 
           const sec = Math.floor(t / 1000) as UTCTimestamp;
-          const cur = currentRef.current;
+          const cur = curRef.current;
           if (cur === null || cur.time !== sec) {
-            if (cur !== null) seriesRef.current?.update(cur);
-            currentRef.current = { time: sec, open: p, high: p, low: p, close: p };
+            curRef.current = { time: sec, open: p, high: p, low: p, close: p };
           } else {
             cur.high = Math.max(cur.high, p);
             cur.low = Math.min(cur.low, p);
             cur.close = p;
           }
-          if (currentRef.current !== null) seriesRef.current?.update(currentRef.current);
-        } else if (msg.stream?.endsWith('@bookTicker') === true) {
+          if (curRef.current !== null) seriesRef.current?.update(curRef.current);
+        } else if (s.endsWith('@bookTicker')) {
           const b = Number(o['b']);
           const a = Number(o['a']);
           if (Number.isFinite(b) && Number.isFinite(a) && b + a > 0) {
@@ -124,7 +128,6 @@ export default function LiveChart() {
           }
         }
       };
-
       const reconnect = (): void => {
         setLive(false);
         if (closed) return;
@@ -138,25 +141,39 @@ export default function LiveChart() {
     };
 
     connect();
-    const cvdTimer = setInterval(() => { setCvd(cvdRef.current); }, 500);
-
+    const timer = setInterval(() => { setCvd(cvdRef.current); }, 500);
     return () => {
       closed = true;
       if (retry !== null) clearTimeout(retry);
-      clearInterval(cvdTimer);
+      clearInterval(timer);
       ws?.close();
     };
-  }, []);
+  }, [market]);
 
   const dir = price !== null && prev !== null ? (price > prev ? 'up' : price < prev ? 'down' : '') : '';
 
   return (
     <div className="chartbox">
+      <div className="switcher">
+        {MARKETS.map((m) => (
+          <button
+            key={m.symbol}
+            type="button"
+            onClick={() => { setMarket(m); }}
+            className={m.symbol === market.symbol ? 'on' : ''}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
       <div className="head">
         <div className={`price ${dir}`}>
-          {price === null ? '—' : price.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+          {price === null
+            ? '—'
+            : price.toLocaleString('en-US', { minimumFractionDigits: market.dp, maximumFractionDigits: market.dp })}
         </div>
-        <div className="muted">BTCUSDT perp</div>
+        <div className="muted">{market.symbol} perp</div>
         <div className="muted">
           <span className={`dot ${live ? 'live' : 'dead'}`} />
           {live ? 'đang nhận' : 'mất kết nối'}
@@ -167,13 +184,17 @@ export default function LiveChart() {
           <span className={cvd > 0 ? 'up' : cvd < 0 ? 'down' : 'muted'}>
             {cvd > 0 ? '+' : ''}{cvd.toFixed(3)}
           </span>
+          <span className="muted"> {market.unit}</span>
         </div>
         <div className="muted mono">{trades.toLocaleString('en-US')} lệnh</div>
       </div>
+
       <div ref={boxRef} />
+
       <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
-        Nến 1 giây dựng trực tiếp trong trình duyệt từ <code>btcusdt@trade</code>. CVD tính từ
-        lúc mở trang, không phải từ dữ liệu đã lưu.
+        Nến 1 giây dựng trực tiếp trong trình duyệt từ <code>{market.stream}@trade</code>.
+        CVD tính từ lúc mở trang, không phải từ dữ liệu đã lưu. Đổi hợp đồng thì mọi số đếm
+        reset — giữ lại sẽ trộn dữ liệu hai thị trường.
       </div>
     </div>
   );

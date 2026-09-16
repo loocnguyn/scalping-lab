@@ -57,7 +57,7 @@ export class UptimeTracker {
   }
 
   /** Bao cao dinh ky — cung la noi de mat nhin thay Tuan 1 da chay duoc bao lau. */
-  summary(extra: Record<string, number>): Record<string, unknown> {
+  summary(extra: Record<string, unknown>): Record<string, unknown> {
     return {
       workerId: this.workerId,
       uptimeHours: Math.round(this.continuousHours * 100) / 100,
