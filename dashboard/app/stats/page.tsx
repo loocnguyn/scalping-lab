@@ -1,5 +1,5 @@
 import { ErrBox, WorkerNotRunning } from '../../components/Empty';
-import { safeQuery, supabase, type Overview } from '../../lib/supabase';
+import { safeQuery, supabase, num, type Overview } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -18,12 +18,6 @@ interface StatRow {
   updated_at: string;
 }
 
-function n(v: string | number | null | undefined): number | null {
-  if (v === null || v === undefined) return null;
-  const x = Number(v);
-  return Number.isFinite(x) ? x : null;
-}
-
 /** WR hoa von tai mot ty le TP/SL, da tinh phi. Cong thuc o muc 1 ke hoach. */
 function breakevenWr(tpPoints: number, slPoints: number, feesUsdt: number): number {
   const win = tpPoints - feesUsdt;
@@ -39,7 +33,7 @@ export default async function StatsPage() {
 
   const o = ov.rows[0];
   const closed = o?.trades_closed ?? 0;
-  const expR = n(o?.exp_r_net ?? null);
+  const expR = num(o?.exp_r_net ?? null);
   const err = ov.error ?? st.error;
 
   // Doi chieu: voi TP250/SL100 vao-ra bang limit, phi khu hoi ~30.97 USDT/BTC.
@@ -132,7 +126,7 @@ export default async function StatsPage() {
             </thead>
             <tbody>
               {st.rows.map((r) => {
-                const e = n(r.exp_r_net);
+                const e = num(r.exp_r_net);
                 return (
                   <tr key={`${r.setup}-${r.regime}-${r.hour_bucket}`}>
                     <td className="mono">{r.setup}</td>
@@ -140,12 +134,12 @@ export default async function StatsPage() {
                     <td className="num">{String(r.hour_bucket).padStart(2, '0')}:00</td>
                     <td className="num">{r.window_n}</td>
                     <td className="num">{r.wins}</td>
-                    <td className="num">{((n(r.win_rate) ?? 0) * 100).toFixed(0)}%</td>
+                    <td className="num">{((num(r.win_rate) ?? 0) * 100).toFixed(0)}%</td>
                     <td className={`num ${e === null ? 'muted' : e > 0 ? 'up' : 'down'}`}>
                       {e === null ? '—' : `${e > 0 ? '+' : ''}${e.toFixed(3)}`}
                     </td>
-                    <td className="num muted">{n(r.exp_r_gross)?.toFixed(3) ?? '—'}</td>
-                    <td className="num muted">{((n(r.nofill_rate) ?? 0) * 100).toFixed(0)}%</td>
+                    <td className="num muted">{num(r.exp_r_gross)?.toFixed(3) ?? '—'}</td>
+                    <td className="num muted">{((num(r.nofill_rate) ?? 0) * 100).toFixed(0)}%</td>
                     <td>
                       {r.enabled
                         ? <span className="tag on">ĐANG BẬT</span>

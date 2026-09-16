@@ -72,3 +72,10 @@ export async function safeQuery<T>(
     return { rows: [], error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+/** Postgres tra numeric duoi dang string. Ep sang so o mot cho, khong rai khap cac trang. */
+export function num(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined) return null;
+  const x = Number(v);
+  return Number.isFinite(x) ? x : null;
+}

@@ -1,5 +1,5 @@
 import { ErrBox, WorkerNotRunning } from '../../components/Empty';
-import { safeQuery, supabase } from '../../lib/supabase';
+import { safeQuery, supabase, num } from '../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -27,12 +27,6 @@ interface Row {
     mae_points: string;
     fees_usdt_per_btc: string | null;
   }[] | null;
-}
-
-function n(v: string | null | undefined): number | null {
-  if (v === null || v === undefined) return null;
-  const x = Number(v);
-  return Number.isFinite(x) ? x : null;
 }
 
 export default async function SignalsPage() {
@@ -85,18 +79,18 @@ export default async function SignalsPage() {
             <tbody>
               {rows.map((r) => {
                 const out = r.signal_outcomes?.[0];
-                const rn = n(out?.r_net ?? null);
+                const rn = num(out?.r_net ?? null);
                 return (
                   <tr key={r.id}>
                     <td className="muted mono">{new Date(r.ts).toLocaleString('vi-VN')}</td>
                     <td className="mono">{r.setup}</td>
                     <td><span className={`tag ${r.side.toLowerCase()}`}>{r.side}</span></td>
-                    <td className="num">{n(r.entry_px)?.toFixed(1)}</td>
-                    <td className="num">{n(r.stop_px)?.toFixed(1)}</td>
-                    <td className="num">{n(r.target_px)?.toFixed(1)}</td>
-                    <td className="num">{n(r.stop_points)?.toFixed(0)}</td>
-                    <td className="num">{n(r.target_points)?.toFixed(0)}</td>
-                    <td className="num">{n(r.r_multiple)?.toFixed(2)}</td>
+                    <td className="num">{num(r.entry_px)?.toFixed(1)}</td>
+                    <td className="num">{num(r.stop_px)?.toFixed(1)}</td>
+                    <td className="num">{num(r.target_px)?.toFixed(1)}</td>
+                    <td className="num">{num(r.stop_points)?.toFixed(0)}</td>
+                    <td className="num">{num(r.target_points)?.toFixed(0)}</td>
+                    <td className="num">{num(r.r_multiple)?.toFixed(2)}</td>
                     <td className="muted">{r.regime}</td>
                     <td>
                       {out === undefined
@@ -107,10 +101,10 @@ export default async function SignalsPage() {
                       {rn === null ? '—' : `${rn > 0 ? '+' : ''}${rn.toFixed(3)}`}
                     </td>
                     <td className="num muted">
-                      {n(out?.r_gross ?? null)?.toFixed(3) ?? '—'}
+                      {num(out?.r_gross ?? null)?.toFixed(3) ?? '—'}
                     </td>
-                    <td className="num muted">{n(out?.mfe_points ?? null)?.toFixed(0) ?? '—'}</td>
-                    <td className="num muted">{n(out?.mae_points ?? null)?.toFixed(0) ?? '—'}</td>
+                    <td className="num muted">{num(out?.mfe_points ?? null)?.toFixed(0) ?? '—'}</td>
+                    <td className="num muted">{num(out?.mae_points ?? null)?.toFixed(0) ?? '—'}</td>
                     <td>
                       {r.gated
                         ? <span className="tag off" title={r.gate_reason ?? ''}>BỊ CHẶN</span>
